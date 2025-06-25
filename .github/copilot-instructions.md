@@ -287,3 +287,7 @@ By following these simple best practices, you can build efficient, scalable, and
 
 1. fetch the following links first:
     - <https://tailwindcss.com/docs/installation>
+
+### Troubleshooting
+
+1. If you could not find the root cause of a problem, try to search github issues first.
