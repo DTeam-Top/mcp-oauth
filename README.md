@@ -46,7 +46,17 @@ If you deleted the client, [you need to open the Command Palette and run `Authen
 
 ### [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector)
 
-Tell Inspector to connect to `https://example.com/mcp/mcp`, with Streamable HTTP transport. You can also use the SSE transport by connecting to `https://example.com/mcp/sse` instead.
+Tell Inspector to connect to `https://example.com/mcp/mcp`, with Streamable HTTP transport.
+
+Note, open the link with `MCP_PROXY_AUTH_TOKEN`:
+
+```
+🔗 Open inspector with token pre-filled:
+   http://localhost:6274/?MCP_PROXY_AUTH_TOKEN=...
+   (Auto-open is disabled when authentication is enabled)
+```
+
+You can also use the SSE transport by connecting to `https://example.com/mcp/sse` instead.
 
 ## Running the server
 
