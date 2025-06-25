@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1750841616885,
-      "tag": "0000_fine_blackheart",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1750842421276,
-      "tag": "0001_rare_black_knight",
+      "when": 1750855116251,
+      "tag": "0000_daffy_blackheart",
       "breakpoints": true
     }
   ]

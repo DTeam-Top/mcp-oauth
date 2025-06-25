@@ -4,7 +4,7 @@ CREATE TABLE "AccessToken" (
 	"expiresAt" timestamp NOT NULL,
 	"clientId" text NOT NULL,
 	"userId" text NOT NULL,
-	"createdAt" timestamp DEFAULT now() NOT NULL,
+	"createdAt" timestamp NOT NULL,
 	CONSTRAINT "AccessToken_token_unique" UNIQUE("token")
 );
 --> statement-breakpoint
@@ -32,7 +32,7 @@ CREATE TABLE "AuthCode" (
 	"redirectUri" text NOT NULL,
 	"codeChallenge" text,
 	"codeChallengeMethod" text,
-	"createdAt" timestamp DEFAULT now() NOT NULL,
+	"createdAt" timestamp NOT NULL,
 	CONSTRAINT "AuthCode_code_unique" UNIQUE("code")
 );
 --> statement-breakpoint
@@ -43,8 +43,8 @@ CREATE TABLE "Client" (
 	"name" text NOT NULL,
 	"redirectUris" text[] NOT NULL,
 	"userId" text,
-	"createdAt" timestamp DEFAULT now() NOT NULL,
-	"updatedAt" timestamp DEFAULT now() NOT NULL,
+	"createdAt" timestamp NOT NULL,
+	"updatedAt" timestamp NOT NULL,
 	CONSTRAINT "Client_clientId_unique" UNIQUE("clientId")
 );
 --> statement-breakpoint

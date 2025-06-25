@@ -42,6 +42,8 @@ VSCode currently [doesn't properly evict the client ID](https://github.com/micro
 }
 ```
 
+If you deleted the client, [you need to open the Command Palette and run `Authentication: Remove Dynamic Authentication Providers` to evict the client ID from VSCode](https://github.com/microsoft/vscode/issues/250960#issuecomment-2954481336).
+
 ### [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector)
 
 Tell Inspector to connect to `https://example.com/mcp/mcp`, with Streamable HTTP transport. You can also use the SSE transport by connecting to `https://example.com/mcp/sse` instead.
