@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
         );
       }
       if (authCode.codeChallengeMethod === 'S256') {
-        const hash = require('crypto').createHash('sha256').update(code_verifier).digest();
+        const hash = require('node:crypto').createHash('sha256').update(code_verifier).digest();
         const base64url = hash
           .toString('base64')
           .replace(/\+/g, '-')

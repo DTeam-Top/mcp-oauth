@@ -1,8 +1,8 @@
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { auth } from '@/app/auth';
+import { auth } from '@/lib/auth';
 import { database } from '@/lib/db';
 import { authCodes, clients } from '@/lib/db/schema';
 
@@ -11,7 +11,10 @@ export default async function AuthorizePage({
 }: {
   searchParams: { [key: string]: string | string[] | undefined };
 }) {
-  const session = await auth();
+  const headersList = await headers();
+  const session = await auth.api.getSession({
+    headers: headersList,
+  });
 
   const params = await searchParams;
 
@@ -23,12 +26,11 @@ export default async function AuthorizePage({
   const code_challenge_method = params.code_challenge_method as string | undefined;
 
   if (!session || !session.user || !session.user.id) {
-    const headersList = await headers();
     const host = headersList.get('host');
     const prot = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const baseUrl = `${prot}://${host}`;
 
-    const loginUrl = new URL('/api/auth/signin', baseUrl);
+    const loginUrl = new URL('/', baseUrl); // Redirect to home page for login
     const callbackUrl = new URL('/oauth/authorize', baseUrl);
 
     // Add all current search params to the callback URL
@@ -72,7 +74,11 @@ export default async function AuthorizePage({
   async function handleConsent(formData: FormData) {
     'use server';
 
-    const session = await auth();
+    const headersList = await headers();
+    const session = await auth.api.getSession({
+      headers: headersList,
+    });
+
     if (!session?.user?.id) {
       // This should not be reachable if the user sees the consent screen
       throw new Error('No session found during consent handling.');

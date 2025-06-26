@@ -20,7 +20,7 @@ Edit your `mcp.json` to look like this:
 {
   "mcpServers": {
       "MyServer": {
-        "name": "LlamaIndex MCP Demo",
+        "name": "MCP OAuth Demo",
         "url": "https://example.com/mcp/mcp",
         "transport": "http-stream"
       },
@@ -74,10 +74,15 @@ Required environment variables should be in `.env`:
 
 ```
 DATABASE_URL="postgresql://user:pass@server/database"
-AUTH_SECRET="any random string"
+BETTER_AUTH_SECRET="any random string"
 GOOGLE_CLIENT_ID="a Google OAuth client ID"
 GOOGLE_CLIENT_SECRET="a Google OAuth client secret"
-REDIS_URL="rediss://user:pass@host:6379"
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+DISCORD_CLIENT_ID=your_discord_client_id
+DISCORD_CLIENT_SECRET=your_discord_client_secret
+NEXT_PUBLIC_BASE_URL=http://localhost:3000
+REDIS_URL="redis://user:pass@host:6379"
 ```
 
 `DATABASE_URL` is required for OAuth authentication to work, this is where sessions etc. live.

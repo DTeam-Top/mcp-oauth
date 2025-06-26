@@ -1,64 +1,12 @@
-import type { AdapterAccount } from '@auth/core/adapters';
 import { createId } from '@paralleldrive/cuid2';
-import { integer, pgTable, primaryKey, text, timestamp } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
-// NextAuth.js required tables
-export const users = pgTable('User', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => createId()),
-  name: text('name'),
-  email: text('email').unique(),
-  emailVerified: timestamp('emailVerified', { mode: 'date' }),
-  image: text('image'),
-});
+// Import better-auth tables from CLI-generated schema
+import { account, session, user, verification } from '../../../auth-schema';
 
-export const accounts = pgTable(
-  'Account',
-  {
-    userId: text('userId')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    type: text('type').$type<AdapterAccount['type']>().notNull(),
-    provider: text('provider').notNull(),
-    providerAccountId: text('providerAccountId').notNull(),
-    refresh_token: text('refresh_token'),
-    access_token: text('access_token'),
-    expires_at: integer('expires_at'),
-    token_type: text('token_type'),
-    scope: text('scope'),
-    id_token: text('id_token'),
-    session_state: text('session_state'),
-  },
-  (account) => ({
-    compoundKey: primaryKey({
-      columns: [account.provider, account.providerAccountId],
-    }),
-  })
-);
-
-export const sessions = pgTable('Session', {
-  sessionToken: text('sessionToken').primaryKey(),
-  userId: text('userId')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  expires: timestamp('expires', { mode: 'date' }).notNull(),
-});
-
-export const verificationTokens = pgTable(
-  'VerificationToken',
-  {
-    identifier: text('identifier').notNull(),
-    token: text('token').notNull(),
-    expires: timestamp('expires', { mode: 'date' }).notNull(),
-  },
-  (vt) => ({
-    compoundKey: primaryKey({ columns: [vt.identifier, vt.token] }),
-  })
-);
-
-// OAuth 2.1 Custom tables
-export const clients = pgTable('Client', {
+// Custom OAuth 2.1 Tables
+export const clients = pgTable('clients', {
   id: text('id')
     .primaryKey()
     .$defaultFn(() => createId()),
@@ -68,7 +16,7 @@ export const clients = pgTable('Client', {
   clientSecret: text('clientSecret').notNull(),
   name: text('name').notNull(),
   redirectUris: text('redirectUris').array().notNull(),
-  userId: text('userId').references(() => users.id, { onDelete: 'cascade' }),
+  userId: text('userId').references(() => user.id, { onDelete: 'cascade' }),
   createdAt: timestamp('createdAt', { mode: 'date' })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -77,7 +25,7 @@ export const clients = pgTable('Client', {
     .$defaultFn(() => new Date()),
 });
 
-export const accessTokens = pgTable('AccessToken', {
+export const accessTokens = pgTable('accessTokens', {
   id: text('id')
     .primaryKey()
     .$defaultFn(() => createId()),
@@ -88,13 +36,13 @@ export const accessTokens = pgTable('AccessToken', {
     .references(() => clients.id, { onDelete: 'cascade' }),
   userId: text('userId')
     .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
+    .references(() => user.id, { onDelete: 'cascade' }),
   createdAt: timestamp('createdAt', { mode: 'date' })
     .notNull()
     .$defaultFn(() => new Date()),
 });
 
-export const authCodes = pgTable('AuthCode', {
+export const authCodes = pgTable('authCodes', {
   id: text('id')
     .primaryKey()
     .$defaultFn(() => createId()),
@@ -105,7 +53,7 @@ export const authCodes = pgTable('AuthCode', {
     .references(() => clients.id, { onDelete: 'cascade' }),
   userId: text('userId')
     .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
+    .references(() => user.id, { onDelete: 'cascade' }),
   redirectUri: text('redirectUri').notNull(),
   codeChallenge: text('codeChallenge'),
   codeChallengeMethod: text('codeChallengeMethod'),
@@ -115,34 +63,32 @@ export const authCodes = pgTable('AuthCode', {
 });
 
 // Relations for better TypeScript support and joins
-import { relations } from 'drizzle-orm';
-
-export const usersRelations = relations(users, ({ many }) => ({
-  accounts: many(accounts),
-  sessions: many(sessions),
+export const userRelations = relations(user, ({ many }) => ({
+  sessions: many(session),
+  accounts: many(account),
   clients: many(clients),
   accessTokens: many(accessTokens),
   authCodes: many(authCodes),
 }));
 
-export const accountsRelations = relations(accounts, ({ one }) => ({
-  user: one(users, {
-    fields: [accounts.userId],
-    references: [users.id],
+export const sessionRelations = relations(session, ({ one }) => ({
+  user: one(user, {
+    fields: [session.userId],
+    references: [user.id],
   }),
 }));
 
-export const sessionsRelations = relations(sessions, ({ one }) => ({
-  user: one(users, {
-    fields: [sessions.userId],
-    references: [users.id],
+export const accountRelations = relations(account, ({ one }) => ({
+  user: one(user, {
+    fields: [account.userId],
+    references: [user.id],
   }),
 }));
 
 export const clientsRelations = relations(clients, ({ one, many }) => ({
-  user: one(users, {
+  user: one(user, {
     fields: [clients.userId],
-    references: [users.id],
+    references: [user.id],
   }),
   accessTokens: many(accessTokens),
   authCodes: many(authCodes),
@@ -153,9 +99,9 @@ export const accessTokensRelations = relations(accessTokens, ({ one }) => ({
     fields: [accessTokens.clientId],
     references: [clients.id],
   }),
-  user: one(users, {
+  user: one(user, {
     fields: [accessTokens.userId],
-    references: [users.id],
+    references: [user.id],
   }),
 }));
 
@@ -164,24 +110,27 @@ export const authCodesRelations = relations(authCodes, ({ one }) => ({
     fields: [authCodes.clientId],
     references: [clients.id],
   }),
-  user: one(users, {
+  user: one(user, {
     fields: [authCodes.userId],
-    references: [users.id],
+    references: [user.id],
   }),
 }));
 
+// Re-export better-auth tables for convenience
+export { account, session, user, verification };
+
 // Export types for TypeScript
-export type User = typeof users.$inferSelect;
-export type NewUser = typeof users.$inferInsert;
+export type User = typeof user.$inferSelect;
+export type NewUser = typeof user.$inferInsert;
 
-export type Account = typeof accounts.$inferSelect;
-export type NewAccount = typeof accounts.$inferInsert;
+export type Account = typeof account.$inferSelect;
+export type NewAccount = typeof account.$inferInsert;
 
-export type Session = typeof sessions.$inferSelect;
-export type NewSession = typeof sessions.$inferInsert;
+export type Session = typeof session.$inferSelect;
+export type NewSession = typeof session.$inferInsert;
 
-export type VerificationToken = typeof verificationTokens.$inferSelect;
-export type NewVerificationToken = typeof verificationTokens.$inferInsert;
+export type Verification = typeof verification.$inferSelect;
+export type NewVerification = typeof verification.$inferInsert;
 
 export type Client = typeof clients.$inferSelect;
 export type NewClient = typeof clients.$inferInsert;

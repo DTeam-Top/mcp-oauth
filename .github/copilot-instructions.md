@@ -10,6 +10,7 @@ This is a Next.js-based application that provides an MCP (Model Context Protocol
 - @vercel/mcp-adapter
 - vercel
 - drizzle orm
+- better-auth
 
 ## Best Practices
 
