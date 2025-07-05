@@ -1,136 +1,332 @@
-# MCP OAuth Flow in this Project
+# A Developer's Guide to MCP OAuth in this Project
 
-This document explains the OAuth 2.0 Authorization Code Grant flow implemented in this Next.js project to secure the Model Context Protocol (MCP) server.
+Welcome! This guide is for developers who are familiar with the Model Context Protocol (MCP) but need to understand how to secure an MCP server using OAuth 2.0. We'll cover the "why," the "how," and show you how to customize the implementation in this project.
 
-## 1. Background: MCP and OAuth 2.0
+This project primarily uses the **Authorization Code Grant** flow, which is the industry standard for securely authenticating users in third-party applications.
 
-**Model Context Protocol (MCP)** is a protocol that enables communication between AI models and various tools or services. An MCP server acts as a bridge, exposing tools that a model can interact with.
+## 1. The "Why": Securing Your MCP Server
 
-**OAuth 2.0** is an industry-standard authorization framework. It allows a third-party application (the "Client") to obtain limited access to an HTTP service (the "Resource Server"), either on behalf of a resource owner (the "User") or by itself.
+Think of your MCP server as a powerful API that exposes tools for AI models. You wouldn't want just anyone to be able to use these tools. While simple API keys might seem sufficient for basic server protection, the MCP context introduces a critical requirement: **acting on behalf of a user**. This is where OAuth 2.0 becomes essential.
 
-In this project, the **MCP server is the Resource Server**. To protect it from unauthorized access, we use an OAuth 2.0 flow. Any application wanting to use the MCP server (the "Client") must first obtain an access token, which it then includes in its requests to the MCP endpoints.
+### Why Not Just API Keys or Simple JWTs?
 
-The specific flow used here is the **Authorization Code Grant**, which is considered highly secure and is suitable for web applications. It involves the following steps:
+It's a fair question. Simpler authentication methods are often faster to implement, so why choose the complexity of OAuth?
 
-1. The Client requests authorization from the User.
-2. The User authenticates with the Authorization Server and grants permission.
-3. The Authorization Server redirects the User back to the Client with an Authorization Code.
-4. The Client exchanges the Authorization Code for an Access Token from the Authorization Server.
-5. The Client uses the Access Token to make requests to the Resource Server (the MCP server).
+* **API Keys are for *Clients*, Not *Users***: An API key tells your server *which application* is making a request (e.g., the "VS Code AI Agent"). It doesn't tell you *which user* is sitting in front of VS Code. For MCP, you almost always need to know who the user is to access their specific data or perform actions on their behalf.
 
-## 2. Implementation in this Project
+* **The Problem of Delegation**: The core of the challenge is *delegated authority*. An MCP client (like an AI agent) needs to prove that a specific user has given it permission to access the MCP server. An API key can't do this. A simple JWT issued by the client also doesn't work, as the client can't be trusted to assert a user's identity without proof.
 
-This project uses the `better-auth` library to function as a complete **Authorization Server**. It handles client registration, user authentication, consent, and token issuance. The MCP endpoint acts as the **Resource Server**, validating tokens before processing any requests.
+  > **An Analogy**: Think of OAuth like a hotel key card system. You (the user) show your ID to the receptionist (the Authorization Server) once. The receptionist gives you a key card (the Access Token) that only works for your room (scopes) and for a limited time. You can give this key card to a cleaning service (the MCP Client) to access your room, but you would never give them your actual ID.
 
-The flow is as follows:
+* **Security and User Trust**: With API keys, the key is often a long-lived, static secret. If leaked, it's a significant security risk. More importantly, asking a user to paste a sensitive API key into a client application is poor security practice and erodes trust.
 
-1. **Client Registration**: A developer wanting to use the MCP server first registers their application via the `/api/oauth/register` endpoint. This provides them with a `client_id` and `client_secret`.
-2. **Authorization Request**: The client application redirects the user to the `/oauth/authorize` page, passing its `client_id`, `redirect_uri`, `response_type=code`, and requested `scope`.
-3. **User Consent**: The user is presented with a consent screen on the `/oauth/authorize` page. If the user is not logged in, they are prompted to do so first. Upon granting permission, `better-auth` generates an authorization code.
-4. **Token Exchange**: The user is redirected back to the client's `redirect_uri` with the authorization code. The client's backend then makes a `POST` request to the `/api/oauth/token` endpoint, exchanging the code (along with its `client_id` and `client_secret`) for an access token and a refresh token.
-5. **MCP Access**: The client can now make requests to the MCP server at `/mcp/[transport]`, including the obtained access token in the `Authorization` header as a Bearer token.
-6. **Token Validation**: The MCP server's `authenticateRequest` function validates the token on every request by checking it against the database. If the token is valid and not expired, the MCP request is processed.
+### The Core Benefits of OAuth 2.0 for MCP
 
-## 3. Key Components and Responsibilities
+OAuth 2.0 is the industry standard specifically designed to solve the problem of delegated authority. It provides a secure, user-centric, and standardized framework.
+
+1. **Secure User-Delegated Access**: This is the cornerstone. The user logs in directly with the Authorization Server (our service), not the MCP client. They grant permission without ever sharing their credentials (like a password) with the client application. The client receives a temporary **Access Token** as proof of this permission.
+
+2. **User Consent is Built-in**: The OAuth flow includes a user-facing consent screen. This is vital for transparency. The user sees exactly what permissions (scopes) the AI agent is requesting (e.g., "read your files," "access your calendar") and can explicitly approve or deny the request.
+
+3. **Granular Permissions with Scopes**: OAuth provides a standard way to define and request fine-grained permissions. You can define scopes like `mcp:tools:readonly` or `mcp:tools:execute`. The client requests only the scopes it needs, and the MCP server can enforce these permissions, adhering to the principle of least privilege.
+
+4. **Improved Security Posture**: Access tokens are typically short-lived, minimizing the damage if one is leaked. **Refresh Tokens** can be used to obtain new access tokens without requiring the user to log in repeatedly, balancing security with a smooth user experience.
+
+In short, while OAuth 2.0 has more moving parts, it provides the correct and secure foundation for an ecosystem where third-party clients act on behalf of users—the exact model of MCP.
+
+## 2. The OAuth Flow: From Request to MCP Access
+
+Here’s a step-by-step breakdown of how a client application gets access to the MCP server using the **Authorization Code Grant** flow.
+
+### Phase 1: Discovery (The Handshake)
+
+Before anything else, the client application needs to know *how* to talk to our security guard (the Authorization Server). Instead of hardcoding URLs, it uses a standard discovery process.
+
+1. **Client to MCP Server**: "I want to access your resources. Who is your security guard (Authorization Server)?"
+    * It does this by asking `/.well-known/oauth-protected-resource`.
+2. **Client to Authorization Server**: "Hello, security guard. How do I work with you? Where do I send users to log in? Where do I exchange codes for tokens?"
+    * It asks this by querying the Authorization Server's `/.well-known/oauth-authorization-server` endpoint.
+
+This automated discovery makes it much easier for developers to integrate with our MCP server.
+
+### Phase 2: Authorization (Getting the Code)
+
+Now that the client knows the rules, it can ask the user for permission.
+
+1. **Client Redirects User**: The client sends the user to our server's `/oauth/authorize` page.
+2. **User Login & Consent**: If not already logged in, the user authenticates (e.g., with Google, GitHub, or email). They are then shown a consent screen saying, "This application wants to access your data. Do you approve?"
+3. **Receive Authorization Code**: Upon approval, our server sends the user back to the client's registered `redirect_uri` with a temporary **Authorization Code**.
+
+### Phase 3: Token Exchange & API Call (The Payoff)
+
+The authorization code isn't the final key. The client's backend must exchange it for the real key.
+
+1. **Client Exchanges Code for Token**: The client's server makes a secure, backend `POST` request to our `/api/oauth/token` endpoint, sending the authorization code along with its own `client_id` and `client_secret`.
+2. **Receive Access Token**: Our server validates everything and, if correct, issues an **Access Token** (and a **Refresh Token**).
+3. **Access MCP Server**: The client can now finally make requests to the protected `/mcp/[transport]` endpoint, including the access token in the `Authorization: Bearer <token>` header. Our MCP server validates this token on every request before processing it.
+
+## 3. Implementation: Under the Hood
+
+This project uses the excellent `better-auth` library to handle the heavy lifting of being an Authorization Server.
 
 | Component | Path | Responsibilities |
 | :--- | :--- | :--- |
-| **Authorization Server** | `src/lib/auth.ts` | Configured instance of `better-auth`. Manages the entire OAuth 2.0 flow. |
-| **Client Registration** | `src/app/api/oauth/register/route.ts` | An endpoint for developers to register their client applications and receive credentials. |
-| **Authorization Endpoint** | `src/app/oauth/authorize/page.tsx` | The user-facing page where the user grants or denies the client's request for access. |
-| **Token Endpoint** | `src/app/api/oauth/token/route.ts` | The endpoint where clients exchange authorization codes for access tokens. |
-| **Resource Server (MCP)** | `src/app/mcp/[transport]/route.ts` | The protected MCP endpoint. It uses `authenticateRequest` to validate access tokens. |
-| **OAuth Discovery** | `src/app/.well-known/*` | Implements OAuth 2.0 server metadata endpoints (RFC 8414 & RFC 8615). These allow clients to automatically discover the authorization server's capabilities and the resource server's requirements. |
-| **Database Schema** | `src/lib/db/schema.ts` | Defines the database tables (`clients`, `authCodes`, `accessTokens`, `refreshTokens`) used by `better-auth` to store OAuth-related data. |
+| **Authorization Server Core** | `src/lib/auth.ts` | Configured instance of `better-auth`. Manages the entire OAuth 2.0 flow, including social logins. |
+| **Client Registration** | `src/app/api/oauth/register/route.ts` | An endpoint for developers to register their client applications and receive a `client_id` and `client_secret`. |
+| **Authorization Endpoint (UI)** | `src/app/oauth/authorize/page.tsx` | The user-facing React Server Component where the user grants or denies access. |
+| **Token Endpoint (API)** | `src/app/api/oauth/token/route.ts` | The API endpoint where clients exchange authorization codes for access tokens. `better-auth` handles the logic. |
+| **Resource Server (MCP)** | `src/app/mcp/[transport]/route.ts` | The protected MCP endpoint. It uses a middleware-like function to validate the `Authorization: Bearer` token before allowing access. |
+| **OAuth Discovery** | `src/app/.well-known/*` | Implements standard discovery endpoints so client applications can automatically configure themselves. |
+| **Database Schema** | `src/lib/db/schema.ts` | Defines the database tables (`clients`, `authCodes`, `accessTokens`, etc.) used by `better-auth` to store all OAuth-related data. |
 
-### A Deeper Look: The `.well-known` Directory for Service Discovery
+### Protecting the MCP Endpoint
 
-Many developers might not be familiar with the `.well-known` directory. It's a standardized path defined by the IETF (Internet Engineering Task Force). Think of it as a public, well-defined "bulletin board" for a web server where it can post information about its services.
+Here is a simplified example of how the MCP route handler in `src/app/mcp/[transport]/route.ts` protects the resource:
 
-In this project, we have two such metadata endpoints:
+```typescript
+// src/app/mcp/[transport]/route.ts (Illustrative)
+import { db } from '@/lib/db';
+import { accessTokens } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
 
-1. **`oauth-protected-resource` (RFC 8615)**: This tells a client application where to find the authorization server for a given protected resource (our MCP server).
-2. **`oauth-authorization-server` (RFC 8414)**: Once the client knows the location of the authorization server, it queries this endpoint to learn *how* to interact with it. It provides crucial details like the URLs for the authorization and token endpoints, the supported grant types (e.g., `authorization_code`), and the required client authentication methods.
+async function authenticateRequest(request: Request) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null; // No token
+  }
+  const token = authHeader.substring(7);
 
-**Why is this important?**
+  // Find the token in the database
+  const tokenRecord = await db.query.accessTokens.findFirst({
+    where: eq(accessTokens.token, token),
+    with: { user: true }, // Join with user table
+  });
 
-Instead of a developer having to manually look up documentation to configure their client, the application can perform this discovery automatically. This two-step discovery process simplifies integration, reduces configuration errors, and is a key feature of modern, interoperable web services.
+  // Check if token exists and is not expired
+  if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
+    return null; // Invalid or expired token
+  }
 
-## 4. Key Methods and Data Structures
+  return tokenRecord.user; // Success! Return the user.
+}
 
-### `src/lib/auth.ts`
+export async function POST(request: Request) {
+  const user = await authenticateRequest(request);
+  if (!user) {
+    return new Response('Unauthorized', { status: 401 });
+  }
 
-- `betterAuth({...})`: Initializes the `better-auth` instance, which acts as the core of the authorization server.
+  // User is authenticated, proceed with MCP logic...
+  // You can now use the `user` object.
+}
+```
 
-### `src/app/api/oauth/register/route.ts`
+## 4. How to Customize and Extend
 
-- `POST(request: Request)`: Handles the client registration logic. It creates a new entry in the `clients` table.
+This project is a template. Here’s how you can adapt it to your needs.
 
-### `src/app/oauth/authorize/page.tsx`
+### Adding New Authentication Methods (Social Logins)
 
-- This is a React Server Component that renders the user consent screen. It interacts with `better-auth` to handle the authorization logic.
+Adding a new way for users to log in (e.g., Twitter/X, Microsoft) is straightforward because `better-auth` handles it.
 
-### `src/app/api/oauth/token/route.ts`
+1. **Get Credentials**: Go to the provider's developer portal and get a Client ID and Client Secret for your application.
+2. **Set Environment Variables**: Add the credentials to your `.env.local` file.
 
-- `POST(request: Request)`: Handles the token exchange. `better-auth` manages the logic of validating the authorization code and issuing tokens.
+    ```bash
+    # .env.local
+    TWITTER_CLIENT_ID="your-twitter-client-id"
+    TWITTER_CLIENT_SECRET="your-twitter-client-secret"
+    ```
 
-### `src/app/mcp/[transport]/route.ts`
+3. **Update `auth.ts`**: Add the new provider to the `socialProviders` configuration in `src/lib/auth.ts`.
 
-- `authenticateRequest(request: NextRequest)`: This function is called at the beginning of every MCP request.
-  - It extracts the token from the `Authorization` header.
-  - It queries the `accessTokens` table in the database to find a matching token.
-  - It checks if the token has expired.
-  - Returns the token object if valid, otherwise `null`.
-- `handler(req: Request)`: The main MCP request handler. It calls `authenticateRequest` and returns a `401 Unauthorized` error if authentication fails.
+    ```typescript
+    // src/lib/auth.ts
+    // ... existing code ...
+    export const auth = betterAuth({
+      // ... existing code ...
+      socialProviders: {
+        google: { /* ... */ },
+        github: { /* ... */ },
+        discord: { /* ... */ },
+        // Add your new provider here
+        twitter: {
+          clientId: process.env.TWITTER_CLIENT_ID!,
+          clientSecret: process.env.TWITTER_CLIENT_SECRET!,
+        },
+      },
+      // ... existing code ...
+    });
+    ```
 
-### `src/app/.well-known/` Endpoints
+That's it! `better-auth` will automatically handle the rest.
 
-- **`oauth-protected-resource/route.ts`**: The `GET` handler returns metadata about the protected MCP server, primarily pointing to the location of the authorization server.
-- **`oauth-authorization-server/route.ts`**: The `GET` handler returns detailed configuration metadata about the authorization server itself, including its endpoints, supported scopes, and grant types.
+### Customizing the Consent Screen
 
-### `src/lib/db/schema.ts`
+The consent screen at `/oauth/authorize` is a React Server Component located at `src/app/oauth/authorize/page.tsx`. You can edit this file just like any other Next.js page to match your brand and style.
 
-- `clients`: Table to store registered client applications (`clientId`, `clientSecret`, `redirectUris`, etc.).
-- `authCodes`: Table to store temporary authorization codes.
-- `accessTokens`: Table to store the access tokens issued to clients.
-- `refreshTokens`: Table to store refresh tokens for obtaining new access tokens.
+### Defining and Using Scopes
 
-## 5. Interaction Flow Diagrams
+If you want to offer more granular permissions for your MCP tools (e.g., `read:contacts` or `write:calendar`), you need to define and manage scopes.
+
+**1. Define Your Scopes:**
+First, decide on a list of scopes you want to support. For example:
+
+* `mcp:tools:read`: Allows listing available tools.
+* `mcp:tools:execute`: Allows executing tools.
+* `profile:read`: Allows reading the user's profile.
+
+**2. Update the Consent Screen (`/oauth/authorize`):**
+Modify the `page.tsx` to display the scopes requested by the client. The requested scopes will be available in the search parameters.
+
+```tsx
+// src/app/oauth/authorize/page.tsx (Illustrative)
+export default function AuthorizePage({ searchParams }: {
+  searchParams: { client_id: string; scope: string; /* ...other params */ }
+}) {
+  const requestedScopes = searchParams.scope?.split(' ') || [];
+
+  return (
+    <div>
+      <h1>Grant Access to {searchParams.client_id}</h1>
+      <p>This application wants to access the following permissions:</p>
+      <ul>
+        {requestedScopes.map(scope => <li key={scope}>{scope}</li>)}
+      </ul>
+      {/* Form with "Approve" and "Deny" buttons */}
+    </div>
+  );
+}
+```
+
+**3. Store Granted Scopes:**
+When the user approves, the `better-auth` library will automatically store the granted scopes alongside the access token in the database.
+
+**4. Enforce Scopes at the MCP Endpoint:**
+In your MCP route handler, after authenticating the token, check that it has the required scope for the requested action.
+
+```typescript
+// src/app/mcp/[transport]/route.ts (Illustrative)
+async function authenticateRequest(request: Request, requiredScope: string) {
+  // ... (previous authentication logic) ...
+  const tokenRecord = await db.query.accessTokens.findFirst({ /* ... */ });
+
+  if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
+    return null;
+  }
+
+  const grantedScopes = tokenRecord.scopes || [];
+  if (!grantedScopes.includes(requiredScope)) {
+    // User is authenticated, but doesn't have the right permission
+    return { error: 'insufficient_scope' };
+  }
+
+  return { user: tokenRecord.user };
+}
+
+export async function POST(request: Request) {
+  const { user, error } = await authenticateRequest(request, 'mcp:tools:execute');
+
+  if (error === 'insufficient_scope') {
+    return new Response('Forbidden: Insufficient scope', { status: 403 });
+  }
+  if (!user) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  // User is authenticated and has the correct scope, proceed...
+}
+```
+
+### Other Important Customizations
+
+* **Token Lifespan**: To change how long access tokens or refresh tokens last, you can pass configuration options to `betterAuth` in `src/lib/auth.ts`. Refer to the `better-auth` documentation for specific options like `accessTokenExpiresIn` or `refreshTokenExpiresIn`.
+
+## 5. Advanced Topics & Security Best Practices
+
+### Refresh Token Rotation
+
+This project is configured to use **Refresh Token Rotation**. When a client uses a refresh token to get a new access token, the server invalidates the used refresh token and issues a *new* refresh token. This is a critical security feature that helps detect if a refresh token has been stolen and used by an attacker.
+
+### Public vs. Confidential Clients
+
+OAuth defines two types of clients:
+
+* **Confidential Clients**: Can keep a secret. These are typically backend web servers (like our Next.js app). They use their `client_id` and `client_secret` to exchange the authorization code for a token.
+* **Public Clients**: Cannot keep a secret. These are applications running entirely in a browser (SPAs) or on a mobile device. They should **never** be given a `client_secret`.
+
+### PKCE (Proof Key for Code Exchange)
+
+To secure public clients, OAuth introduces **PKCE** (pronounced "pixie"). It's a mechanism that prevents an attacker from intercepting the authorization code and using it. `better-auth` supports PKCE out of the box, making it possible to securely support public clients. If you are building a native app or SPA client, you should ensure it uses the PKCE extension.
+
+## 6. Getting Started: Running & Testing the Flow
+
+To see the OAuth flow in action, you can run the project locally.
+
+1. **Install Dependencies**:
+
+    ```bash
+    pnpm install
+    ```
+
+2. **Set Up Environment**: Copy `.env.example` to `.env.local` and fill in the required values, especially the database URL and at least one social provider's credentials.
+3. **Run Database Migrations**:
+
+    ```bash
+    pnpm drizzle:push
+    ```
+
+4. **Start the Server**:
+
+    ```bash
+    pnpm dev
+    ```
+
+You can then use a tool like Postman or `curl` to simulate a client application and test the full OAuth flow from registration to making a protected MCP API call.
+
+## 7. Interaction Flow Diagrams
 
 ### Flow Chart
 
 ```mermaid
 graph TD
-    subgraph "Discovery Phase"
-        ClientApplication[Client Application]
-        ResourceServer[Resource Server]
-        AuthorizationServer[Authorization Server]
-
-        ClientApplication -- "1 Request for resource leads to discovery" --> ResourceServer
-        ResourceServer -- "2 Returns location of Authorization Server" --> ClientApplication
-        ClientApplication -- "3 Requests Authorization Server metadata" --> AuthorizationServer
-        AuthorizationServer -- "4 Returns endpoints and configuration" --> ClientApplication
+    subgraph User Interaction
+        direction LR
+        User(End User)
+        Browser(User's Browser)
     end
 
-    subgraph "Authorization Phase"
-        AuthEndpoint["Auth Server: /oauth/authorize"]
-        ClientApplication -- "5 Redirects user to authorize" --> AuthEndpoint
-        AuthEndpoint -- "6 User authenticates & grants consent" --> AuthEndpoint
-        AuthEndpoint -- "7 Redirects back to client with authorization code" --> ClientApplication
+    subgraph Client
+        direction LR
+        MCPClient["MCP Client <br>(e.g., AI Agent in Editor)"]
     end
 
-    subgraph "Token & API Call Phase"
-        ClientApplication -- "8 Exchanges code for access token" --> AuthorizationServer
-        AuthorizationServer -- "9 Returns access token" --> ClientApplication
-        ClientApplication -- "10 Makes API call with token" --> ResourceServer
+    subgraph "Our Service (mcp-nextjs)"
+        direction LR
+        AuthServer["Authorization Server<br>(better-auth)"]
+        ResourceServer[MCP Resource Server]
     end
+
+    User -- "1 Initiates action requiring MCP call" --> MCPClient
+    MCPClient -- "2 Launches User's Browser for authentication" --> Browser
+    Browser -- "3 Navigates to /oauth/authorize" --> AuthServer
+    User -- "4 Logs in & Grants Consent via Browser" --> AuthServer
+    AuthServer -- "5 Redirects Browser to Client's redirect_uri with Code" --> Browser
+    Browser -- "6 Delivers Auth Code to Client" --> MCPClient
+    MCPClient -- "7 Exchanges Code for Access Token <br>(Back-channel)" --> AuthServer
+    AuthServer -- "8 Returns Access Token" --> MCPClient
+    MCPClient -- "9 Makes API call with Access Token" --> ResourceServer
+    ResourceServer -- "10 Returns Protected Resource" --> MCPClient
+
+    style User fill:#f9f,stroke:#333,stroke-width:2px
+    style MCPClient fill:#bbf,stroke:#333,stroke-width:2px
 ```
 
 ### Sequence Diagram
 
 ```mermaid
 sequenceDiagram
-    participant Client as Client App
+    participant Client as MCP Client <br>(e.g., AI Agent in Editor)
     participant User
     participant ResourceServer as MCP Server (Resource Server)
     participant AuthServer as Authorization Server
@@ -155,4 +351,33 @@ sequenceDiagram
     Client->>+ResourceServer: 9. Request Protected Resource with Access Token (/mcp)
     ResourceServer->>ResourceServer: 10. Validate Access Token
     ResourceServer-->>-Client: 11. Return Resource
+```
+
+### Component Interaction Diagram
+
+This diagram shows how the different parts of our Next.js application work together to deliver the OAuth 2.0 and MCP functionality.
+
+```mermaid
+C4Context
+  title Component Diagram for MCP OAuth Server
+
+  Container_Boundary(app, "Next.js Application") {
+    Component(mcp, "MCP Endpoint", "Next.js Route Handler", "The protected API resource at /mcp")
+    Component(auth, "Authorization Server", "better-auth library", "Handles the entire OAuth 2.0 flow")
+    Component(db, "Database", "PostgreSQL", "Stores clients, tokens, users, etc.")
+    Component(schema, "DB Schema", "Drizzle ORM", "Defines tables for OAuth and application data")
+
+    Rel(mcp, auth, "Validates token with")
+    Rel(auth, db, "Reads/writes OAuth data using")
+    Rel(db, schema, "Is structured by")
+  }
+
+  System_Ext(client, "MCP Client", "e.g., AI Agent in an editor")
+  System_Ext(user, "End User", "The person granting access")
+
+  Rel(user, client, "Uses")
+  Rel_Back(user, auth, "Logs into and grants consent via browser")
+
+  Rel(client, mcp, "Makes authenticated API calls to")
+  Rel_Back(client, auth, "Performs OAuth flow with")
 ```
