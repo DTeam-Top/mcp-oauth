@@ -1,5 +1,10 @@
 # OAuth 2.1 MCP Server as a Next.js app on Vercel
 
+Note: it was forked from: <https://github.com/run-llama/mcp-nextjs> with the following changes:
+
+- prisma replaced with drizzle ORM
+- next-auth replaced with better-auth
+
 This is a Next.js-based application that provides an MCP (Model Context Protocol) server with OAuth 2.1 authentication support. It is intended as a model for building your own MCP server in a Next.js context. It uses the [@vercel/mcp-adapter](https://github.com/vercel/mcp-adapter) to handle the MCP protocol, in order to support both SSE and Streamable HTTP transports.
 
 In addition to being an OAuth server, it also requires the user authenticate. This is currently configured to use Google as a provider, but you could authenticate users however you want (X, GitHub, your own user/password database etc.) without breaking the OAuth flow.
@@ -93,18 +98,18 @@ REDIS_URL="redis://user:pass@host:6379"
 
 Common Drizzle ORM commands:
 
-* `pnpm run db:generate` - Generate database client from schema
-* `pnpm run db:push` - Push schema changes to database (development)
-* `pnpm run db:migrate` - Generate and run migrations (production)
-* `pnpm run db:studio` - Open Drizzle Studio to view/edit data
+- `pnpm run db:generate` - Generate database client from schema
+- `pnpm run db:push` - Push schema changes to database (development)
+- `pnpm run db:migrate` - Generate and run migrations (production)
+- `pnpm run db:studio` - Open Drizzle Studio to view/edit data
 
 ## Architecture
 
 If you're using this as a template for your own Next.js app, the important parts are:
 
-* `/src/app/api/oauth/*` - these implement oauth client registration and token exchange
-* `/src/app/oauth/authorize/page.tsx` - this implements the oauth consent screen (it's extremely basic right now)
-* `/src/mcp/[transport]/route.ts` - this implements the MCP server itself. Your tools, resources, etc. should be defined here.
+- `/src/app/api/oauth/*` - these implement oauth client registration and token exchange
+- `/src/app/oauth/authorize/page.tsx` - this implements the oauth consent screen (it's extremely basic right now)
+- `/src/mcp/[transport]/route.ts` - this implements the MCP server itself. Your tools, resources, etc. should be defined here.
 
 To handle OAuth your app needs to be able to persist clients, access tokens, etc.. To do this it's using a PostgreSQL database accessed via Drizzle ORM. You can swap this for some other database if you want (it will be easiest if it's another Drizzle-supported database).
 
@@ -112,18 +117,18 @@ To handle OAuth your app needs to be able to persist clients, access tokens, etc
 
 The database schema is defined in `src/lib/db/schema.ts` using Drizzle ORM. The main tables are:
 
-* `accounts` - NextAuth.js account information
-* `sessions` - user sessions
-* `users` - user accounts
-* `verificationTokens` - email verification tokens  
-* `oauthClients` - registered OAuth clients
-* `oauthAccessTokens` - issued access tokens
-* `oauthAuthCodes` - authorization codes for the OAuth flow
+- `accounts` - NextAuth.js account information
+- `sessions` - user sessions
+- `users` - user accounts
+- `verificationTokens` - email verification tokens  
+- `oauthClients` - registered OAuth clients
+- `oauthAccessTokens` - issued access tokens
+- `oauthAuthCodes` - authorization codes for the OAuth flow
 
 You'll also notice:
 
-* `src/app/auth.ts` - this implements Auth.js authentication to your app itself. It's configured to use Google as a provider, but you can change it to use any other provider supports by Auth.js. This is not required for the MCP server to work, but it's a good idea to have it in place for your own app.
-* `src/app/api/auth/[...nextauth]/route.ts` - this plumbs in the Auth.js authentication, and is again not part of the OAuth implementation.
+- `src/app/auth.ts` - this implements Auth.js authentication to your app itself. It's configured to use Google as a provider, but you can change it to use any other provider supports by Auth.js. This is not required for the MCP server to work, but it's a good idea to have it in place for your own app.
+- `src/app/api/auth/[...nextauth]/route.ts` - this plumbs in the Auth.js authentication, and is again not part of the OAuth implementation.
 
 ## Deploying to production
 
