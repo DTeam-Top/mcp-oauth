@@ -54,10 +54,9 @@ async function authenticateRequest(request: NextRequest) {
 }
 
 // MCP handler with authentication
-const handler = async (req: Request) => {
+const handler = async (req: NextRequest) => {
   // Inject authentication here
-  // biome-ignore lint/suspicious/noExplicitAny: NextRequest interface compatibility required for headers access
-  const nextReq = req as any as NextRequest; // for type compatibility
+  const nextReq = req;
   const accessToken = await authenticateRequest(nextReq);
   if (!accessToken) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {

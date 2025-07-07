@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
     process.env.NEXTAUTH_URL || `${request.nextUrl.protocol}//${request.nextUrl.host}`;
 
   const metadata = {
-    resource: `${baseUrl}/sse`,
+    resource: `${baseUrl}/mcp`,
     authorization_servers: [baseUrl],
     scopes_supported: ['api:read', 'api:write'],
     bearer_methods_supported: ['header'],
